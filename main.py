@@ -1,78 +1,84 @@
 import RPi.GPIO as GPIO
 import time
 import threading
-
-dc       = 40
-exiting  = False
-
-def pwm_setup():
-    GPIO.setmode(GPIO.BOARD)
-    GPIO.setup(12, GPIO.OUT)
-    pwm = GPIO.PWM(12, 100)
-    return pwm
-
-def pwm_loop(pwm, dc_change_event):
-    current_dc = 0
-
-    pwm.start(current_dc)
-
-    while current_dc < dc:
-        current_dc += 1
-        pwm.ChangeDutyCycle(current_dc)
-        time.sleep(0.05)
-
-    while True:
-        dc_change_event.wait()
-
-        if exiting: break
-
-        if dc > current_dc:
-            while current_dc < dc:
-                current_dc += 1
-                pwm.ChangeDutyCycle(current_dc)
-                time.sleep(0.03)
-        elif dc < current_dc:
-            while current_dc > dc:
-                current_dc -= 1
-                pwm.ChangeDutyCycle(current_dc)
-                time.sleep(0.03)
-        
-        dc_change_event.clear()
-
-    while current_dc > 0:
-        current_dc -= 1
-        pwm.ChangeDutyCycle(current_dc)
-        time.sleep(0.02)
-
-def pwm_cleanup():
-    pwm.stop()
-    GPIO.cleanup()
+import bluetooth
+from servo_motor import Servo
+from prop_motor import Prop
 
 if __name__ == '__main__':
-    dc_change_event = threading.Event()
-    dc_change_event.set()
+    target_name = 'ESP32test'
+    target_address = None
 
-    pwm = pwm_setup()
+    nearby_devices = bluetooth.discover_devices()
 
-    pwm_thread = threading.Thread(target=pwm_loop, args=(pwm, dc_change_event))
-    pwm_thread.start()
-    
-    try:
-        print('starting..')
-        while True:
-            new_dc = int(input('input duty cycle: '))
-            if new_dc >= 0 and new_dc <= 100:
-                dc = new_dc
-                dc_change_event.set()
-            else:
-                print('bad input')
-    except KeyboardInterrupt:
-        dc_change_event.set()
-        exiting = True
-        print('\nexiting..')
+    for baddr in nearby_devices:
+        if target_name in bluetooth.lookup_name(baddr):
+            print('connecting to: ' + bluetooth.lookup_name(baddr) + ' at: ' + baddr)
+            target_address = baddr
+            break
 
-    pwm_thread.join()
-    pwm_cleanup()
+    BTsocket = bluetooth.BluetoothSocket(bluetooth.RFCOMM)
+    BTsocket.connect((target_address, 1))
+    BTsocket.send(b'ack')
 
+    # setup servo
+    servo_event = threading.Event()
+    servo = Servo(servo_event)
+    servo_thread = threading.Thread(target=Servo.loop, args=(servo,))
+    servo_thread.start()
+    servo_event.set()
 
-    
+    # setup prop
+    prop_event = threading.Event()
+    prop = Prop(prop_event)
+    prop_thread = threading.Thread(target=Prop.loop, args=(prop,))
+    prop_thread.start()
+    prop_event.set()
+
+    # main loop for multiple commands
+    # probably won't need this but don't want to delete until tested
+    # print('starting..')
+    # exiting = False
+    # while True:
+    #     if exiting: break
+
+    #     recval = str(BTsocket.recv(128))
+    #     commands = recval.split('|')
+        
+    #     for cmd in commands:
+    #         if 'e' in cmd:
+    #             servo.exiting = prop.exiting = exiting = True
+    #             servo_event.set()
+    #             prop_event.set()
+    #             print('\nexiting..')
+    #             break
+
+    # main loop
+    print('starting..')
+    while True:
+        recval = BTsocket.recv(128).decode()
+        print(recval)
+        print('recval[0]: ' + recval[0])
+
+        if 'e' in recval:
+            servo.exiting = prop.exiting = exiting = True
+            servo_event.set()
+            prop_event.set()
+            print('\nexiting..')
+            break
+
+        elif recval[0] == 'p':
+            prop.duty_cycle = int(recval[1:])
+            prop_event.set()
+
+        elif recval[0] == 's':
+            duty_cycle_delta = -0.25 if recval[1] == 'l' else 0.25
+            print('duty cycle delta: ' + str(duty_cycle_delta))
+            servo.change_duty_cycle(duty_cycle_delta)
+            servo_event.set()        
+
+    # cleanup
+    servo_thread.join()
+    prop_thread.join()
+    GPIO.cleanup()
+    BTsocket.close()    
