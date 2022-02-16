@@ -40,7 +40,6 @@ if __name__ == '__main__':
     while True:
         recval = BTsocket.recv(128).decode()
         print(recval)
-        print('recval[0]: ' + recval[0])
 
         if 'e' in recval:
             servo.exiting = prop.exiting = exiting = True
@@ -54,7 +53,7 @@ if __name__ == '__main__':
                 prop.duty_cycle = int(recval[1:])
             except:
                 print('exception: bad int for prop dc')
-                
+
             prop_event.set()
 
         elif recval[0] == 's':
