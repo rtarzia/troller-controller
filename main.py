@@ -35,24 +35,6 @@ if __name__ == '__main__':
     prop_thread.start()
     prop_event.set()
 
-    # main loop for multiple commands
-    # probably won't need this but don't want to delete until tested
-    # print('starting..')
-    # exiting = False
-    # while True:
-    #     if exiting: break
-
-    #     recval = str(BTsocket.recv(128))
-    #     commands = recval.split('|')
-        
-    #     for cmd in commands:
-    #         if 'e' in cmd:
-    #             servo.exiting = prop.exiting = exiting = True
-    #             servo_event.set()
-    #             prop_event.set()
-    #             print('\nexiting..')
-    #             break
-
     # main loop
     print('starting..')
     while True:
@@ -68,7 +50,11 @@ if __name__ == '__main__':
             break
 
         elif recval[0] == 'p':
-            prop.duty_cycle = int(recval[1:])
+            try:
+                prop.duty_cycle = int(recval[1:])
+            except:
+                print('exception: bad int for prop dc')
+                
             prop_event.set()
 
         elif recval[0] == 's':
