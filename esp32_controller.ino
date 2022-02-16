@@ -31,7 +31,10 @@ void loop() {
     while(Serial.available()) {
       *bufptr = Serial.read();
       bufptr++;
+
+      if (bufptr == &buf[127]) break;
     }
+    Serial.println(buf);
     SerialBT.print(buf);
   }
   
